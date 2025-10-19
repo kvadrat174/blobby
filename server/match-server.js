@@ -113,6 +113,10 @@ wss.on("connection", (ws, req) => {
         const match = matches.get(data.matchId);
         if (!match) {
           console.log(`⚠️ Signal for unknown match: ${data.matchId}`);
+          ws.send(JSON.stringify({ 
+            type: "error", 
+            message: "Match not found" 
+          }));
           return;
         }
 
@@ -124,14 +128,23 @@ wss.on("connection", (ws, req) => {
         }
 
         if (target.readyState === ws.OPEN) {
+          // ВАЖНО: Отправляем сигнал без изменений
           target.send(JSON.stringify({
             type: "signal",
+            matchId: data.matchId,
             from: data.from,
+            to: data.to,
             signal: data.signal
           }));
-          console.log(`🔄 Signal relayed: ${data.from} → ${data.to} (${data.signal.type || 'candidate'})`);
+          
+          const signalType = data.signal.type || (data.signal.candidate ? 'candidate' : 'unknown');
+          console.log(`🔄 Signal relayed: ${data.from} → ${data.to} (${signalType})`);
         } else {
           console.log(`⚠️ Target WebSocket not open for ${data.to}`);
+          ws.send(JSON.stringify({ 
+            type: "error", 
+            message: `Target player ${data.to} is not connected` 
+          }));
         }
         break;
       }

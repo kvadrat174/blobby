@@ -1,15 +1,75 @@
 // src/game/WebRTCService.ts
+import { webrtcConfig } from './webrtc-config';
+
 export class WebRTCService {
-    private ws: WebSocket;
+    private ws: WebSocket | null = null;
     private peer: RTCPeerConnection | null = null;
     private matchId: string = "";
     private isHost: boolean = false;
     private onDataChannel: (dc: RTCDataChannel) => void;
     private dataChannel: RTCDataChannel | null = null;
+    private serverUrl: string;
+    private isConnecting: boolean = false;
 
     constructor(serverUrl: string, onDataChannel: (dc: RTCDataChannel) => void) {
-        this.ws = new WebSocket(serverUrl);
+        this.serverUrl = serverUrl;
         this.onDataChannel = onDataChannel;
+    }
+
+    // === ИНИЦИАЛИЗАЦИЯ WEBSOCKET ===
+    
+    private async ensureWebSocketConnection(): Promise<void> {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            return;
+        }
+
+        if (this.isConnecting) {
+            // Ждем завершения подключения
+            return new Promise((resolve, reject) => {
+                const checkInterval = setInterval(() => {
+                    if (this.ws?.readyState === WebSocket.OPEN) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    } else if (!this.isConnecting) {
+                        clearInterval(checkInterval);
+                        reject(new Error("WebSocket connection failed"));
+                    }
+                }, 100);
+                
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    reject(new Error("WebSocket connection timeout"));
+                }, 5000);
+            });
+        }
+
+        this.isConnecting = true;
+
+        return new Promise((resolve, reject) => {
+            try {
+                this.ws = new WebSocket(this.serverUrl);
+
+                this.ws.onopen = () => {
+                    console.log("WebSocket connected");
+                    this.isConnecting = false;
+                    resolve();
+                };
+
+                this.ws.onerror = (err) => {
+                    console.error("WebSocket error:", err);
+                    this.isConnecting = false;
+                    reject(new Error("WebSocket connection error"));
+                };
+
+                this.ws.onclose = () => {
+                    console.log("WebSocket closed");
+                    this.isConnecting = false;
+                };
+            } catch (err) {
+                this.isConnecting = false;
+                reject(err);
+            }
+        });
     }
 
     // === ПУБЛИЧНЫЕ ГЕТТЕРЫ ===
@@ -33,6 +93,13 @@ export class WebRTCService {
     // === ОСНОВНЫЕ МЕТОДЫ ===
 
     async createMatch(): Promise<string> {
+        // Убедимся что WebSocket подключен
+        await this.ensureWebSocketConnection();
+        
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            throw new Error("WebSocket not connected");
+        }
+
         this.isHost = true;
         this.ws.send(JSON.stringify({ type: "create" }));
 
@@ -40,6 +107,12 @@ export class WebRTCService {
             const timeout = setTimeout(() => {
                 reject(new Error("Timeout: Server did not respond"));
             }, 10000);
+
+            if (!this.ws) {
+                clearTimeout(timeout);
+                reject(new Error("WebSocket not available"));
+                return;
+            }
 
             this.ws.onmessage = async (event) => {
                 try {
@@ -65,15 +138,17 @@ export class WebRTCService {
                     console.error("Error handling message:", err);
                 }
             };
-
-            this.ws.onerror = (err) => {
-                clearTimeout(timeout);
-                reject(new Error("WebSocket error"));
-            };
         });
     }
 
     async joinMatch(matchId: string): Promise<void> {
+        // Убедимся что WebSocket подключен
+        await this.ensureWebSocketConnection();
+        
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            throw new Error("WebSocket not connected");
+        }
+
         this.isHost = false;
         this.matchId = matchId;
         this.ws.send(JSON.stringify({ type: "join", matchId }));
@@ -82,6 +157,12 @@ export class WebRTCService {
             const timeout = setTimeout(() => {
                 reject(new Error("Timeout: Could not join match"));
             }, 10000);
+
+            if (!this.ws) {
+                clearTimeout(timeout);
+                reject(new Error("WebSocket not available"));
+                return;
+            }
 
             this.ws.onmessage = async (event) => {
                 try {
@@ -104,22 +185,29 @@ export class WebRTCService {
                     console.error("Error handling message:", err);
                 }
             };
-
-            this.ws.onerror = (err) => {
-                clearTimeout(timeout);
-                reject(new Error("WebSocket error"));
-            };
         });
     }
 
     // === ПРИВАТНЫЕ МЕТОДЫ ===
 
     private async initPeer(isHost: boolean): Promise<void> {
+        // Определяем TURN сервер из переменных окружения или используем публичный
+        const turnServer = window.location.hostname === 'game.kvadrat.tech'
+            ? `turn:${window.location.hostname}:3478`
+            : 'turn:openrelay.metered.ca:80';
+        
         this.peer = new RTCPeerConnection({ 
             iceServers: [
                 { urls: "stun:stun.l.google.com:19302" },
-                { urls: "stun:stun1.l.google.com:19302" }
-            ] 
+                { urls: "stun:stun1.l.google.com:19302" },
+                // TURN сервер для NAT traversal
+                {
+                    urls: [turnServer],
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            ],
+            iceCandidatePoolSize: 10
         });
 
         if (isHost) {
@@ -161,14 +249,20 @@ export class WebRTCService {
             return;
         }
 
-        await this.peer.setRemoteDescription(signal);
+        console.log("Handling SDP signal:", signal.type);
+        await this.peer.setRemoteDescription(new RTCSessionDescription(signal));
 
-        if (this.isHost && signal.type === "offer") {
+        // Если мы не хост и получили offer - создаем answer
+        if (!this.isHost && signal.type === "offer") {
+            console.log("Creating answer...");
             const answer = await this.peer.createAnswer();
             await this.peer.setLocalDescription(answer);
             this.sendSignal(answer);
-        } else if (!this.isHost && signal.type === "answer") {
-            // Answer already set as remote description
+            console.log("Answer sent");
+        }
+        // Если мы хост и получили answer - просто устанавливаем
+        else if (this.isHost && signal.type === "answer") {
+            console.log("Answer received and set");
         }
     }
 
@@ -186,6 +280,11 @@ export class WebRTCService {
     }
 
     private sendSignal(signal: RTCSessionDescriptionInit | RTCIceCandidate): void {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            console.error("Cannot send signal: WebSocket not open");
+            return;
+        }
+
         this.ws.send(JSON.stringify({
             type: "signal",
             matchId: this.matchId,
@@ -213,9 +312,11 @@ export class WebRTCService {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.close();
         }
-
+        
+        this.ws = null;
         this.matchId = "";
         this.isHost = false;
+        this.isConnecting = false;
     }
 
     public isConnected(): boolean {
