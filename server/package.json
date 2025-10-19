@@ -1,17 +1,28 @@
 {
-  "name": "server",
+  "name": "volleyball-match-server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "type": "module",
+  "description": "WebRTC matchmaking server for volleyball game",
+  "main": "match-server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node match-server.js",
+    "dev": "node --watch match-server.js"
   },
-  "keywords": [],
+  "keywords": [
+    "webrtc",
+    "matchmaking",
+    "websocket",
+    "volleyball"
+  ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
-    "express": "^5.1.0",
-    "nanoid": "^5.1.6",
-    "ws": "^8.18.3"
+    "express": "^4.18.2",
+    "ws": "^8.14.2",
+    "nanoid": "^5.0.3",
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
