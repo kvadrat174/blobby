@@ -37,8 +37,42 @@ export class MainMenu extends Scene {
     }
 
     create() {
-        const w = this.scale.width;
-        const h = this.scale.height;
+        // Получаем реальные размеры камеры
+        let cameraWidth = this.scale.width;
+        let cameraHeight = this.scale.height;
+        
+        // Проверяем portrait mode
+        const isPortrait = window.innerHeight > window.innerWidth;
+        
+        // Если portrait - меняем размеры местами для корректного расчета
+        if (isPortrait) {
+            [cameraWidth, cameraHeight] = [cameraHeight, cameraWidth];
+        }
+        
+        // Теперь вычисляем landscape размеры
+        const w = Math.max(cameraWidth, cameraHeight);
+        const h = Math.min(cameraWidth, cameraHeight);
+        
+        console.log('MainMenu dimensions:', {
+            isPortrait,
+            originalCamera: {
+                width: this.scale.width,
+                height: this.scale.height
+            },
+            correctedCamera: {
+                width: cameraWidth,
+                height: cameraHeight
+            },
+            landscape: {
+                width: w,
+                height: h
+            },
+            window: {
+                innerWidth: window.innerWidth,
+                innerHeight: window.innerHeight
+            }
+        });
+        
         const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
         
         // Адаптивные размеры
@@ -173,11 +207,10 @@ export class MainMenu extends Scene {
         }).setOrigin(0.5);
 
         // Инициализация WebRTC
-        // Определяем URL сервера (для разработки используем локальный)
         const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         const wsUrl = isDev 
-            ? 'ws://localhost:8080'  // Локальная разработка
-            : 'wss://game.kvadrat.tech/ws';  // Продакшн
+            ? 'ws://localhost:8080'
+            : 'wss://game.kvadrat.tech/ws';
 
         console.log('Connecting to WebSocket server:', wsUrl);
 
@@ -272,7 +305,6 @@ export class MainMenu extends Scene {
 
     private copyMatchCode() {
         if (this.currentMatchCode) {
-            // Копирование в буфер обмена
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(this.currentMatchCode)
                     .then(() => {
@@ -291,7 +323,6 @@ export class MainMenu extends Scene {
     }
 
     private showCodeFallback() {
-        // Fallback для старых браузеров
         prompt("Скопируйте код игры:", this.currentMatchCode);
     }
 

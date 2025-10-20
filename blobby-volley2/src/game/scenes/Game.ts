@@ -69,11 +69,19 @@ export class Game extends Scene {
         
         const { width, height } = this.cameras.main;
         
-        this.FIELD_WIDTH = width;
-        this.FIELD_HEIGHT = height;
+        // КРИТИЧНО: Всегда используем большую сторону как ширину (X), меньшую как высоту (Y)
+        this.FIELD_WIDTH = Math.max(width, height);
+        this.FIELD_HEIGHT = Math.min(width, height);
         
-        const isLandscape = width >= height;
-        const scale = isLandscape ? height / 640 : width / 640;
+        console.log('Game dimensions (landscape forced):', {
+            cameraWidth: width,
+            cameraHeight: height,
+            fieldWidth: this.FIELD_WIDTH,
+            fieldHeight: this.FIELD_HEIGHT
+        });
+        
+        // Масштабирование на основе высоты (короткой стороны)
+        const scale = this.FIELD_HEIGHT / 640;
         const finalScale = Math.max(0.4, Math.min(scale, 2.0));
         
         this.GROUND_HEIGHT = 20 * finalScale;
@@ -93,7 +101,8 @@ export class Game extends Scene {
             height: this.FIELD_HEIGHT,
             scale: finalScale,
             isMultiplayer: this.isMultiplayer,
-            isHost: this.isHost
+            isHost: this.isHost,
+            isMobile: this.isMobile
         });
     }
 
@@ -113,21 +122,36 @@ export class Game extends Scene {
                ('ontouchstart' in window) || 
                (navigator.maxTouchPoints > 0);
     }
+    
+    private isPortraitMode(): boolean {
+        // Проверяем реальную ориентацию устройства
+        return window.innerHeight > window.innerWidth;
+    }
 
     create() {
         const bg = this.add.image(this.FIELD_WIDTH / 2, this.FIELD_HEIGHT / 2, "beach");
         bg.setDisplaySize(this.FIELD_WIDTH, this.FIELD_HEIGHT);
 
+        // Используем FIELD_HEIGHT (короткую сторону) для всех вертикальных расчетов
         const posScale = this.FIELD_HEIGHT / 640;
         const groundY = this.FIELD_HEIGHT - this.GROUND_HEIGHT / 2;
         const playerY = this.FIELD_HEIGHT - this.GROUND_HEIGHT - 60 * posScale;
         const ballY = this.FIELD_HEIGHT - this.GROUND_HEIGHT - 150 * posScale;
         const gravity = 600 * posScale;
+        
+        console.log('Create positions:', {
+            groundY,
+            playerY,
+            ballY,
+            posScale,
+            fieldWidth: this.FIELD_WIDTH,
+            fieldHeight: this.FIELD_HEIGHT
+        });
 
-        // Сетка
+        // Сетка - в центре FIELD_WIDTH (широкой стороны)
         const netCenterY = groundY - this.NET_HEIGHT / 2;
         this.volleyNet = this.physics.add.staticImage(
-            this.FIELD_WIDTH / 2,
+            this.FIELD_WIDTH / 2,  // Центр широкой стороны
             netCenterY,
             "volley-net"
         );
@@ -139,13 +163,19 @@ export class Game extends Scene {
         (this.volleyNet as Phaser.Types.Physics.Arcade.ImageWithStaticBody).refreshBody();
 
         const netBody = this.volleyNet.body as Phaser.Physics.Arcade.Body;
-        const bodyWidth = 10 * (this.FIELD_HEIGHT / 640);
+        const bodyWidth = 10 * posScale;
         const bodyHeight = this.NET_HEIGHT;
         netBody.setSize(bodyWidth, bodyHeight);
         netBody.setOffset(
             this.volleyNet.displayWidth / 2 - bodyWidth / 2,
             this.volleyNet.displayHeight / 2 - bodyHeight / 2
         );
+        
+        console.log('Net position:', {
+            x: this.volleyNet.x,
+            y: this.volleyNet.y,
+            centerX: this.FIELD_WIDTH / 2
+        });
 
         // Пол
         const ground = this.add.zone(
@@ -156,9 +186,9 @@ export class Game extends Scene {
         );
         this.physics.add.existing(ground, true);
 
-        // Мяч
+        // Мяч - стартовая позиция относительно FIELD_WIDTH
         this.ball = this.physics.add.sprite(
-            this.FIELD_WIDTH * 0.2,
+            this.FIELD_WIDTH * 0.2,  // 20% от широкой стороны
             ballY,
             "ball"
         );
@@ -172,15 +202,21 @@ export class Game extends Scene {
         ballBody.setDrag(20, 0);
         ballBody.setMaxVelocity(800 * posScale, 800 * posScale);
         
+        console.log('Ball position:', {
+            x: this.ball.x,
+            y: this.ball.y,
+            expectedX: this.FIELD_WIDTH * 0.2
+        });
+        
         this.physics.add.collider(this.ball, ground, () => {
             const scoringPlayer = this.ball.x < this.FIELD_WIDTH / 2 ? this.player2 : this.player1;
             this.handlePointScored(scoringPlayer);
         });
         this.physics.add.collider(this.ball, this.volleyNet, this.handleNetCollision, undefined, this);
 
-        // Игрок 1
+        // Игрок 1 - 20% от FIELD_WIDTH (слева)
         this.player1 = this.physics.add.sprite(
-            this.FIELD_WIDTH * 0.2,
+            this.FIELD_WIDTH * 0.2,  // 20% от широкой стороны
             playerY,
             "playerLeft"
         );
@@ -191,10 +227,16 @@ export class Game extends Scene {
             .setGravityY(gravity);
         this.physics.add.collider(this.player1, ground);
         this.physics.add.collider(this.player1, this.volleyNet);
+        
+        console.log('Player1 position:', {
+            x: this.player1.x,
+            y: this.player1.y,
+            expectedX: this.FIELD_WIDTH * 0.2
+        });
 
-        // Игрок 2
+        // Игрок 2 - 80% от FIELD_WIDTH (справа)
         this.player2 = this.physics.add.sprite(
-            this.FIELD_WIDTH * 0.8,
+            this.FIELD_WIDTH * 0.8,  // 80% от широкой стороны
             playerY,
             "playerRight"
         );
@@ -205,6 +247,12 @@ export class Game extends Scene {
             .setGravityY(gravity);
         this.physics.add.collider(this.player2, ground);
         this.physics.add.collider(this.player2, this.volleyNet);
+        
+        console.log('Player2 position:', {
+            x: this.player2.x,
+            y: this.player2.y,
+            expectedX: this.FIELD_WIDTH * 0.8
+        });
 
         // Коллизия мяча с игроками
         this.physics.add.collider(this.ball, this.player1, () => this.hitBall(this.player1));
@@ -266,16 +314,32 @@ export class Game extends Scene {
     // === МОБИЛЬНОЕ УПРАВЛЕНИЕ ===
 
     private createMobileControls() {
+        // ВАЖНО: В portrait режиме canvas повернут на 90° через CSS
+        // Поэтому coordinates нужно корректировать!
+        const isPortrait = this.isPortraitMode();
+        
+        // Используем FIELD_WIDTH для горизонтальных расчетов
         const halfWidth = this.FIELD_WIDTH / 2;
         const btnSize = Math.min(80 * (this.FIELD_HEIGHT / 640), 80);
         const margin = Math.min(15 * (this.FIELD_HEIGHT / 640), 20);
         const controlsHeight = 120 * (this.FIELD_HEIGHT / 640);
         const jumpZoneHeight = this.FIELD_HEIGHT - controlsHeight - 20;
         
+        console.log('Creating mobile controls:', {
+            isPortrait,
+            halfWidth,
+            fieldWidth: this.FIELD_WIDTH,
+            fieldHeight: this.FIELD_HEIGHT,
+            innerWidth: window.innerWidth,
+            innerHeight: window.innerHeight
+        });
+        
+        // Зона прыжка игрока 1 - левая половина широкой стороны
         this.player1JumpZone = this.add.zone(halfWidth / 2, jumpZoneHeight / 2, halfWidth, jumpZoneHeight)
             .setInteractive()
             .setScrollFactor(0);
         
+        // Зона прыжка игрока 2 - правая половина широкой стороны  
         this.player2JumpZone = this.add.zone(halfWidth + halfWidth / 2, jumpZoneHeight / 2, halfWidth, jumpZoneHeight)
             .setInteractive()
             .setScrollFactor(0);
@@ -313,43 +377,60 @@ export class Game extends Scene {
         const arrowFontSize = Math.max(32, Math.min(40 * (this.FIELD_HEIGHT / 640), 48));
         const btnY = this.FIELD_HEIGHT - margin - btnSize / 2;
         
-        // Кнопки игрока 1
+        // Кнопки игрока 1 - слева (используем FIELD_WIDTH для позиционирования)
         const p1LeftBtn = this.add.rectangle(margin + btnSize / 2, btnY, btnSize, btnSize, 0x4444ff, 0.6)
-            .setInteractive().setScrollFactor(0).setDepth(100);
+            .setInteractive()
+            .setScrollFactor(0)
+            .setDepth(100);
         this.add.text(p1LeftBtn.x, p1LeftBtn.y, '◄', {
             fontSize: `${arrowFontSize}px`,
             color: '#ffffff',
             fontFamily: 'Arial',
             fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(101);
+        }).setOrigin(0.5).setDepth(101).setScrollFactor(0);
 
         const p1RightBtn = this.add.rectangle(margin * 2 + btnSize * 1.5, btnY, btnSize, btnSize, 0x4444ff, 0.6)
-            .setInteractive().setScrollFactor(0).setDepth(100);
+            .setInteractive()
+            .setScrollFactor(0)
+            .setDepth(100);
         this.add.text(p1RightBtn.x, p1RightBtn.y, '►', {
             fontSize: `${arrowFontSize}px`,
             color: '#ffffff',
             fontFamily: 'Arial',
             fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(101);
+        }).setOrigin(0.5).setDepth(101).setScrollFactor(0);
 
-        // Кнопки игрока 2
+        // Кнопки игрока 2 - справа (используем FIELD_WIDTH)
         const p2LeftBtn = this.add.rectangle(this.FIELD_WIDTH - margin * 2 - btnSize * 1.5, btnY, btnSize, btnSize, 0x44ff44, 0.6)
-            .setInteractive().setScrollFactor(0).setDepth(100);
+            .setInteractive()
+            .setScrollFactor(0)
+            .setDepth(100);
         this.add.text(p2LeftBtn.x, p2LeftBtn.y, '◄', {
             fontSize: `${arrowFontSize}px`,
             color: '#ffffff',
             fontFamily: 'Arial',
             fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(101);
+        }).setOrigin(0.5).setDepth(101).setScrollFactor(0);
 
         const p2RightBtn = this.add.rectangle(this.FIELD_WIDTH - margin - btnSize / 2, btnY, btnSize, btnSize, 0x44ff44, 0.6)
-            .setInteractive().setScrollFactor(0).setDepth(100);
+            .setInteractive()
+            .setScrollFactor(0)
+            .setDepth(100);
         this.add.text(p2RightBtn.x, p2RightBtn.y, '►', {
             fontSize: `${arrowFontSize}px`,
             color: '#ffffff',
             fontFamily: 'Arial',
             fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(101);
+        }).setOrigin(0.5).setDepth(101).setScrollFactor(0);
+        
+        console.log('Mobile controls created:', {
+            halfWidth,
+            fieldWidth: this.FIELD_WIDTH,
+            p1LeftX: p1LeftBtn.x,
+            p1RightX: p1RightBtn.x,
+            p2LeftX: p2LeftBtn.x,
+            p2RightX: p2RightBtn.x
+        });
 
         // События игрока 1
         this.player1JumpZone.on('pointerdown', () => {
@@ -443,7 +524,7 @@ export class Game extends Scene {
             const data = JSON.parse(event.data);
             
             if (data.type === 'gameState' && !this.isHost) {
-                const lerpFactor = 0.5; // Увеличили с 0.3 до 0.5
+                const lerpFactor = 0.5;
                 
                 // Player1
                 const p1x = this.denormalizeX(data.player1.x);
@@ -455,7 +536,7 @@ export class Game extends Scene {
                 // Ball
                 const ballX = this.denormalizeX(data.ball.x);
                 const ballY = this.denormalizeY(data.ball.y);
-                const ballLerpFactor = 0.6; // Увеличили с 0.4 до 0.6
+                const ballLerpFactor = 0.6;
                 this.ball.x = this.lerp(this.ball.x, ballX, ballLerpFactor);
                 this.ball.y = this.lerp(this.ball.y, ballY, ballLerpFactor);
                 this.ball.setVelocity(
@@ -464,7 +545,6 @@ export class Game extends Scene {
                 );
                 this.ball.setAngle(data.ball.angle);
                 
-                // ВАЖНО: Синхронизируем состояние enable мяча
                 const ballBody = this.ball.body as Phaser.Physics.Arcade.Body;
                 if (data.ball.enabled !== undefined) {
                     ballBody.enable = data.ball.enabled;
@@ -477,7 +557,7 @@ export class Game extends Scene {
                 this.touches = data.touches;
             } 
             else if (data.type === 'playerState' && this.isHost) {
-                const lerpFactor = 0.5; // Увеличили с 0.3
+                const lerpFactor = 0.5;
                 const p2x = this.denormalizeX(data.player2.x);
                 const p2y = this.denormalizeY(data.player2.y);
                 this.player2.x = this.lerp(this.player2.x, p2x, lerpFactor);
@@ -502,16 +582,12 @@ export class Game extends Scene {
                 if (this.isHost && data.player === 2) {
                     if (this.player2.body!.blocked.down) {
                         this.player2.setVelocityY(this.JUMP_VELOCITY);
-                        
-                        // ВАЖНО: HOST активирует мяч при прыжке GUEST
                         const ballBody = this.ball.body as Phaser.Physics.Arcade.Body;
                         if (!ballBody.enable) ballBody.enable = true;
                     }
                 } else if (!this.isHost && data.player === 1) {
                     if (this.player1.body!.blocked.down) {
                         this.player1.setVelocityY(this.JUMP_VELOCITY);
-                        
-                        // GUEST активирует мяч при прыжке HOST
                         const ballBody = this.ball.body as Phaser.Physics.Arcade.Body;
                         if (!ballBody.enable) ballBody.enable = true;
                     }
@@ -551,7 +627,7 @@ export class Game extends Scene {
                     vx: ballBody.velocity.x / (this.BALL_FORCE * 2),
                     vy: ballBody.velocity.y / (this.BALL_FORCE * 2),
                     angle: this.ball.angle,
-                    enabled: ballBody.enable // ВАЖНО: передаем состояние enable
+                    enabled: ballBody.enable
                 },
                 score: {
                     player1: this.player1Score,
@@ -609,7 +685,6 @@ export class Game extends Scene {
         this.ball.setVelocity(forceX, forceY);
         this.ball.setAngularVelocity((forceX / 5) * (this.FIELD_HEIGHT / 640));
         
-        // HOST отправляет событие удара немедленно
         if (this.isMultiplayer && this.isHost && this.dataChannel && this.dataChannel.readyState === 'open') {
             const ballBody = this.ball.body as Phaser.Physics.Arcade.Body;
             this.dataChannel.send(JSON.stringify({
@@ -640,7 +715,6 @@ export class Game extends Scene {
 
         this.scoreText.setText(`${this.player1Score} - ${this.player2Score}`);
         
-        // HOST отправляет обновление счета
         if (this.isMultiplayer && this.isHost && this.dataChannel && this.dataChannel.readyState === 'open') {
             this.dataChannel.send(JSON.stringify({
                 type: 'scoreUpdate',
@@ -655,8 +729,17 @@ export class Game extends Scene {
     }
 
     private resetBall(scoringPlayer: Physics.Arcade.Sprite) {
+        // Позиция мяча рассчитывается относительно FIELD_WIDTH
         const startX = scoringPlayer === this.player1 ? this.FIELD_WIDTH * 0.2 : this.FIELD_WIDTH * 0.8;
-        const startY = this.FIELD_HEIGHT - this.GROUND_HEIGHT - 200 * (this.FIELD_WIDTH / 1024);
+        const startY = this.FIELD_HEIGHT - this.GROUND_HEIGHT - 200 * (this.FIELD_HEIGHT / 640);
+        
+        console.log('Ball reset:', {
+            startX,
+            startY,
+            scoringPlayer: scoringPlayer === this.player1 ? 'player1' : 'player2',
+            fieldWidth: this.FIELD_WIDTH
+        });
+        
         this.ball.setPosition(startX, startY);
         this.ball.setVelocity(0, 0);
         this.ball.setAngularVelocity(0);
@@ -665,7 +748,6 @@ export class Game extends Scene {
         this.touches = 0;
         this.lastToucher = null;
         
-        // HOST отправляет сброс мяча
         if (this.isMultiplayer && this.isHost && this.dataChannel && this.dataChannel.readyState === 'open') {
             this.dataChannel.send(JSON.stringify({
                 type: 'ballReset',
@@ -709,7 +791,6 @@ export class Game extends Scene {
                     const ballBody = this.ball.body as Phaser.Physics.Arcade.Body;
                     if (!ballBody.enable) ballBody.enable = true;
                     
-                    // HOST отправляет событие прыжка GUEST
                     if (this.isMultiplayer && this.isHost && this.dataChannel && this.dataChannel.readyState === 'open') {
                         this.dataChannel.send(JSON.stringify({ type: 'jump', player: 1 }));
                     }
@@ -745,7 +826,6 @@ export class Game extends Scene {
                     const ballBody = this.ball.body as Phaser.Physics.Arcade.Body;
                     if (!ballBody.enable) ballBody.enable = true;
                     
-                    // GUEST отправляет событие прыжка HOST
                     if (this.isMultiplayer && !this.isHost && this.dataChannel && this.dataChannel.readyState === 'open') {
                         this.dataChannel.send(JSON.stringify({ type: 'jump', player: 2 }));
                     }

@@ -1,3 +1,4 @@
+// telegram.ts
 export interface TelegramWebApp {
     initData: string;
     initDataUnsafe: {
@@ -21,13 +22,20 @@ export interface TelegramWebApp {
     backgroundColor: string;
     BackButton: any;
     MainButton: any;
+    
+    // Viewport info
+    isFullscreen?: boolean;
+    
+    // Methods
     ready: () => void;
     expand: () => void;
     close: () => void;
     enableClosingConfirmation: () => void;
     disableClosingConfirmation: () => void;
-    onEvent: (eventType: string, callback: () => void) => void;
-    offEvent: (eventType: string, callback: () => void) => void;
+    requestFullscreen?: () => Promise<boolean>;
+    exitFullscreen?: () => Promise<boolean>;
+    onEvent: (eventType: string, callback: (data?: any) => void) => void;
+    offEvent: (eventType: string, callback: (data?: any) => void) => void;
     sendData: (data: string) => void;
     openLink: (url: string) => void;
     openTelegramLink: (url: string) => void;
@@ -57,63 +65,191 @@ export function initTelegram() {
         return null;
     }
 
-    // Инициализируем приложение
-    tg.ready();
-    
-    // Разворачиваем на весь экран
-    tg.expand();
-    
-    // Скрываем кнопку "Назад" по умолчанию
-    tg.BackButton.hide();
-    
-    // Включаем подтверждение закрытия
-    tg.enableClosingConfirmation();
+    try {
+        tg.ready();
+        tg.expand();
+        tg.BackButton.hide();
+        tg.enableClosingConfirmation();
 
-    console.log('Telegram Mini App initialized:', {
-        version: tg.version,
-        platform: tg.platform,
-        user: tg.initDataUnsafe.user,
-        viewportHeight: tg.viewportHeight
-    });
+        console.log('Telegram Mini App initialized:', {
+            version: tg.version,
+            platform: tg.platform,
+            user: tg.initDataUnsafe.user,
+            viewportHeight: tg.viewportHeight,
+            isExpanded: tg.isExpanded,
+            isFullscreen: tg.isFullscreen
+        });
+
+        // Слушаем изменения viewport для адаптации
+        tg.onEvent('viewportChanged', (data) => {
+            console.log('Viewport changed:', {
+                height: tg.viewportHeight,
+                stableHeight: tg.viewportStableHeight,
+                isExpanded: tg.isExpanded,
+                isFullscreen: tg.isFullscreen,
+                data
+            });
+            window.dispatchEvent(new Event('resize'));
+        });
+
+    } catch (error) {
+        console.error('Ошибка инициализации Telegram WebApp:', error);
+    }
 
     return tg;
 }
 
 export function isMobileDevice(): boolean {
-    // Проверяем через Telegram WebApp
     if (tg) {
         const mobilePlatforms = ['android', 'ios', 'android_x', 'ios_x'];
         return mobilePlatforms.includes(tg.platform.toLowerCase());
     }
     
-    // Fallback на обычную проверку
-    const userAgent = navigator.userAgent.toLowerCase();
+    const ua = navigator.userAgent.toLowerCase();
     const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet/i;
     
-    return mobileRegex.test(userAgent) || 
+    return mobileRegex.test(ua) || 
            ('ontouchstart' in window) || 
            (navigator.maxTouchPoints > 0);
 }
 
-export function isLandscape(): boolean {
-    return window.innerWidth > window.innerHeight;
+export function isTelegramMobilePlatform(): boolean {
+    if (!tg) return false;
+    const mobilePlatforms = ['android', 'ios', 'android_x', 'ios_x'];
+    return mobilePlatforms.includes(tg.platform.toLowerCase());
 }
 
-export function requestLandscape() {
-    // Пытаемся войти в полноэкранный режим с альбомной ориентацией
-    const elem = document.documentElement;
-    
-    if (elem.requestFullscreen) {
-        elem.requestFullscreen({ navigationUI: 'hide' } as any).catch(err => {
-            console.log('Fullscreen request failed:', err);
-        });
+/**
+ * Запрос полноэкранного режима через Telegram API (только для мобильных)
+ * Для desktop использует стандартный HTML5 Fullscreen API
+ */
+export async function requestFullscreen(): Promise<boolean> {
+    // Для Telegram Mobile используем их API
+    if (tg && isTelegramMobilePlatform()) {
+        if (typeof tg.requestFullscreen === 'function') {
+            try {
+                const result = await tg.requestFullscreen();
+                console.log('Telegram fullscreen requested:', result);
+                
+                // Блокируем ориентацию в landscape
+                await lockOrientationLandscape();
+                
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                }
+                
+                return true;
+            } catch (error) {
+                console.error('Ошибка запроса fullscreen через Telegram:', error);
+            }
+        } else {
+            console.warn('requestFullscreen не поддерживается в версии Telegram WebApp', tg.version);
+        }
     }
     
-    // Пытаемся заблокировать ориентацию (работает не везде)
-    const orientation = screen.orientation as any;
-    if (orientation && typeof orientation.lock === 'function') {
-        orientation.lock('landscape').catch((err: Error) => {
-            console.log('Orientation lock failed:', err);
-        });
+    // Fallback на стандартный HTML5 Fullscreen API для desktop или если Telegram API недоступен
+    if (!isTelegramMobilePlatform()) {
+        try {
+            const elem = document.documentElement;
+            
+            if (elem.requestFullscreen) {
+                await elem.requestFullscreen();
+            } else if ((elem as any).webkitRequestFullscreen) {
+                await (elem as any).webkitRequestFullscreen();
+            } else if ((elem as any).mozRequestFullScreen) {
+                await (elem as any).mozRequestFullScreen();
+            } else if ((elem as any).msRequestFullscreen) {
+                await (elem as any).msRequestFullscreen();
+            }
+            
+            await lockOrientationLandscape();
+            return true;
+        } catch (error) {
+            console.error('Ошибка входа в fullscreen (HTML5):', error);
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Выход из полноэкранного режима
+ */
+export async function exitFullscreen(): Promise<boolean> {
+    // Для Telegram Mobile
+    if (tg && isTelegramMobilePlatform() && typeof tg.exitFullscreen === 'function') {
+        try {
+            const result = await tg.exitFullscreen();
+            console.log('Telegram fullscreen exited:', result);
+            return true;
+        } catch (error) {
+            console.error('Ошибка выхода из fullscreen через Telegram:', error);
+        }
+    }
+    
+    // Для desktop или fallback
+    try {
+        if (document.exitFullscreen) {
+            await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+            await (document as any).webkitExitFullscreen();
+        } else if ((document as any).mozCancelFullScreen) {
+            await (document as any).mozCancelFullScreen();
+        } else if ((document as any).msExitFullscreen) {
+            await (document as any).msExitFullscreen();
+        }
+        return true;
+    } catch (error) {
+        console.error('Ошибка выхода из fullscreen:', error);
+    }
+    
+    return false;
+}
+
+/**
+ * Проверка, находится ли приложение в fullscreen
+ */
+export function isInFullscreen(): boolean {
+    // Проверяем через Telegram API если доступно
+    if (tg && isTelegramMobilePlatform()) {
+        return tg.isFullscreen === true;
+    }
+    
+    // Проверяем через стандартный API
+    return !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+    );
+}
+
+/**
+ * Блокировка ориентации в landscape
+ */
+async function lockOrientationLandscape(): Promise<boolean> {
+    try {
+        if (screen.orientation && (screen.orientation as any).lock) {
+            await (screen.orientation as any).lock('landscape');
+            console.log('Ориентация заблокирована: landscape');
+            return true;
+        }
+    } catch (error) {
+        console.warn('Не удалось заблокировать ориентацию:', error);
+    }
+    return false;
+}
+
+/**
+ * Разблокировка ориентации
+ */
+export function unlockOrientation() {
+    try {
+        if (screen.orientation && (screen.orientation as any).unlock) {
+            (screen.orientation as any).unlock();
+            console.log('Ориентация разблокирована');
+        }
+    } catch (error) {
+        console.warn('Не удалось разблокировать ориентацию:', error);
     }
 }

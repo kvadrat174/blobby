@@ -19,6 +19,9 @@
             padding: 0;
             box-sizing: border-box;
             -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         html, body {
@@ -28,89 +31,151 @@
             position: fixed;
             background: #000;
             touch-action: none;
-            -webkit-user-select: none;
-            user-select: none;
+            overscroll-behavior: none;
         }
 
-        #app {
+        html {
+            height: -webkit-fill-available;
+        }
+
+        body {
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
+            overscroll-behavior-y: contain;
+            overscroll-behavior-x: none;
+        }
+
+        #app, #root {
             width: 100%;
             height: 100%;
             display: flex;
             flex-direction: column;
-        }
-
-        /* Сообщение о повороте экрана */
-        #rotate-message {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: #000;
-            color: #fff;
-            z-index: 10000;
-            justify-content: center;
             align-items: center;
-            flex-direction: column;
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 20px;
+            justify-content: center;
         }
 
-        #rotate-message svg {
-            width: 100px;
-            height: 100px;
-            margin-bottom: 20px;
-            animation: rotate 2s ease-in-out infinite;
-        }
-
-        @keyframes rotate {
-            0%, 100% { transform: rotate(0deg); }
-            50% { transform: rotate(90deg); }
-        }
-
-        #rotate-message h2 {
-            font-size: 24px;
-            margin-bottom: 10px;
-        }
-
-        #rotate-message p {
-            font-size: 16px;
-            color: #999;
-        }
-
-        /* Показываем сообщение только на мобильных в portrait */
-        @media screen and (max-width: 768px) and (orientation: portrait) {
-            #rotate-message {
-                display: flex !important;
-            }
-            
-            #app > *:not(#rotate-message) {
-                display: none !important;
+        /* КРИТИЧНО: Поворачиваем canvas в портретном режиме */
+        @media screen and (orientation: portrait) {
+            #game-container {
+                transform: rotate(90deg);
+                transform-origin: center center;
+                width: 100vh !important;
+                height: 100vw !important;
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                margin-left: -50vh;
+                margin-top: -50vw;
             }
         }
 
-        /* Полноэкранный режим для игры */
+        @media screen and (orientation: landscape) {
+            #game-container {
+                width: 100vw !important;
+                height: 100vh !important;
+            }
+        }
+
         canvas {
             display: block;
             width: 100% !important;
             height: 100% !important;
+            object-fit: contain;
+            will-change: transform;
+            transform: translateZ(0);
+        }
+
+        :fullscreen, :-webkit-full-screen, :-moz-full-screen {
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        :fullscreen::backdrop, :-webkit-full-screen::backdrop, :-moz-full-screen::backdrop {
+            background-color: #000;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid #444;
+            border-top: 3px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #fullscreen-btn {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: rgba(76, 175, 80, 0.9);
+            border: 2px solid #4CAF50;
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            display: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+            font-family: Arial, sans-serif;
+        }
+
+        #fullscreen-btn:hover {
+            background: rgba(76, 175, 80, 1);
+            transform: scale(1.05);
+            box-shadow: 0 6px 16px rgba(76, 175, 80, 0.5);
+        }
+
+        #fullscreen-btn:active {
+            transform: scale(0.98);
+        }
+
+        #fullscreen-btn.show {
+            display: block;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        :fullscreen #fullscreen-btn,
+        :-webkit-full-screen #fullscreen-btn,
+        :-moz-full-screen #fullscreen-btn {
+            display: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: translateX(-50%) scale(1);
+            }
+            50% {
+                opacity: 0.8;
+                transform: translateX(-50%) scale(1.05);
+            }
         }
     </style>
 </head>
 <body>
-    <!-- Сообщение о повороте -->
-    <div id="rotate-message">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="3" width="20" height="14" rx="2"/>
-            <path d="M8 21h8"/>
-            <path d="M12 17v4"/>
-        </svg>
-        <h2>Поверните устройство</h2>
-        <p>Для игры требуется альбомная ориентация</p>
-    </div>
-
+    <button id="fullscreen-btn">🔳 Полный экран</button>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 </body>
