@@ -54,26 +54,11 @@
             justify-content: center;
         }
 
-        /* КРИТИЧНО: Поворачиваем canvas в портретном режиме */
-        @media screen and (orientation: portrait) {
-            #game-container {
-                transform: rotate(90deg);
-                transform-origin: center center;
-                width: 100vh !important;
-                height: 100vw !important;
-                position: absolute;
-                left: 50%;
-                top: 50%;
-                margin-left: -50vh;
-                margin-top: -50vw;
-            }
-        }
-
-        @media screen and (orientation: landscape) {
-            #game-container {
-                width: 100vw !important;
-                height: 100vh !important;
-            }
+        /* Убираем CSS трансформацию - ориентация теперь управляется в Phaser сценах */
+        #game-container {
+            width: 100vw !important;
+            height: 100vh !important;
+            position: relative;
         }
 
         canvas {

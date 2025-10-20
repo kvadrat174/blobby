@@ -17,11 +17,12 @@ export const PhaserGame = forwardRef<IRefPhaserGame, IProps>(function PhaserGame
 
     useLayoutEffect(() => {
         if (game.current === null) {
-            // Вычисляем размеры для landscape
-            const width = Math.max(window.innerWidth, window.innerHeight);
-            const height = Math.min(window.innerWidth, window.innerHeight);
+            // Создаем игру с текущими размерами окна
+            // Каждая сцена сама определит свою ориентацию
+            const width = window.innerWidth;
+            const height = window.innerHeight;
 
-            console.log('Creating Phaser game with size:', { width, height });
+            console.log('Creating Phaser game with initial size:', { width, height });
 
             game.current = StartGame('game-container', width, height);
 
@@ -57,6 +58,59 @@ export const PhaserGame = forwardRef<IRefPhaserGame, IProps>(function PhaserGame
             EventBus.removeListener('current-scene-ready');
         };
     }, [currentActiveScene, ref]);
+
+    // Слушаем изменения размера окна и обновляем размер игры
+    // НО сохраняем ориентацию текущей сцены
+    useEffect(() => {
+        const handleResize = () => {
+            if (game.current && game.current.scene.scenes.length > 0) {
+                const currentScene = game.current.scene.getScenes(true)[0];
+                const sceneName = currentScene?.scene.key;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+                
+                console.log('Window resized:', { width, height, scene: sceneName });
+                
+                // Определяем какую ориентацию нужно использовать
+                let finalWidth, finalHeight;
+                
+                if (sceneName === 'Game') {
+                    // Игра всегда в ландшафте (широкая сторона = ширина)
+                    finalWidth = Math.max(width, height);
+                    finalHeight = Math.min(width, height);
+                } else {
+                    // Меню всегда в портрете (узкая сторона = ширина)
+                    finalWidth = Math.min(width, height);
+                    finalHeight = Math.max(width, height);
+                }
+                
+                console.log('Applying size:', { finalWidth, finalHeight, scene: sceneName });
+                
+                game.current.scale.resize(finalWidth, finalHeight);
+                
+                // Обновляем размеры камеры текущей сцены
+                if (currentScene && currentScene.cameras && currentScene.cameras.main) {
+                    currentScene.cameras.main.setSize(finalWidth, finalHeight);
+                    currentScene.scale.resize(finalWidth, finalHeight);
+                }
+            }
+        };
+
+        window.addEventListener('resize', handleResize);
+        
+        const handleOrientationChange = () => {
+            // Задержка для корректного получения новых размеров
+            setTimeout(handleResize, 150);
+        };
+        
+        window.addEventListener('orientationchange', handleOrientationChange);
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            window.removeEventListener('orientationchange', handleOrientationChange);
+        };
+    }, []);
 
     return (
         <div 

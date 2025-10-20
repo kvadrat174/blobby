@@ -5,14 +5,14 @@ import { MainMenu } from './scenes/MainMenu';
 import { Preloader } from './scenes/Preloader';
 
 export default function StartGame(parent: string, width: number, height: number): Phaser.Game {
-    return new Phaser.Game({
+    const config: Phaser.Types.Core.GameConfig = {
         type: Phaser.AUTO,
         width: width,
         height: height,
         parent: parent,
         backgroundColor: '#028af8',
         scale: {
-            mode: Phaser.Scale.RESIZE,
+            mode: Phaser.Scale.NONE, // Отключаем автоматическое масштабирование
             autoCenter: Phaser.Scale.CENTER_BOTH,
             width: width,
             height: height
@@ -35,5 +35,7 @@ export default function StartGame(parent: string, width: number, height: number)
             MainGame,
             GameOver
         ]
-    });
+    };
+    
+    return new Phaser.Game(config);
 }
