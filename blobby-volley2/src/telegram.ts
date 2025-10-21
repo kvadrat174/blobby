@@ -335,6 +335,18 @@ export function shareGameResult(score: number, botUsername: string, startParam?:
 }
 
 /**
+ * Поделиться ссылкой на игру (для онлайн мультиплеера)
+ * @param gameCode - код игры
+ * @param baseUrl - базовый URL приложения (например, window.location.origin)
+ */
+export function shareGameInvite(gameCode: string, baseUrl: string): boolean {
+    const gameUrl = `${baseUrl}?game=${gameCode}`;
+    const text = `🏐 Играй со мной в волейбол!\n\nКод игры: ${gameCode}\nИли просто перейди по ссылке ⬇️`;
+    
+    return shareUrl(gameUrl, text);
+}
+
+/**
  * Fallback на стандартный Web Share API
  */
 function fallbackShare(url: string, text?: string): boolean {

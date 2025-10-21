@@ -41,6 +41,7 @@ export class MainMenu extends Scene {
     create() {
         this.updateOrientation();
         
+        
         // Проверяем URL параметры - может быть код игры в ссылке
         this.checkURLForGameCode();
         
@@ -51,7 +52,12 @@ export class MainMenu extends Scene {
         // Проверяем URL параметры
         const urlParams = new URLSearchParams(window.location.search);
         const gameCode = urlParams.get('code') || urlParams.get('game');
-        
+
+        // Проверяем, не создали ли мы уже эту игру
+        if (this.currentMatchCode === gameCode) {
+            console.log('This is our own game, ignoring URL');
+            return;
+        }
         if (gameCode && gameCode.trim()) {
             console.log('Game code found in URL:', gameCode);
             

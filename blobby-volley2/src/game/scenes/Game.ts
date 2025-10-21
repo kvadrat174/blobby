@@ -400,9 +400,9 @@ export class Game extends Scene {
         
         // ВСЯ область экрана = зона прыжка
         const jumpZone = this.add.zone(
-            this.FIELD_WIDTH / 2, 
+            this.FIELD_WIDTH / 4, 
             this.FIELD_HEIGHT / 2, 
-            this.FIELD_WIDTH, 
+            this.FIELD_WIDTH / 2, 
             this.FIELD_HEIGHT
         ).setInteractive().setScrollFactor(0);
         
