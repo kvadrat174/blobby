@@ -1,6 +1,7 @@
 import { GameObjects, Scene } from "phaser";
 import { EventBus } from "../EventBus";
 import { WebRTCService } from "../WebRTCService";
+import { shareUrl } from "../../telegram";
 
 export class MainMenu extends Scene {
     background!: GameObjects.Image;
@@ -21,11 +22,9 @@ export class MainMenu extends Scene {
     joinContainer!: GameObjects.Container;
     joinInputBg!: GameObjects.Rectangle;
     joinCodeText!: GameObjects.Text;
+    joinClearButton!: GameObjects.Text;
     confirmJoinButton!: GameObjects.Text;
     cancelJoinButton!: GameObjects.Text;
-    
-    // Кнопки виртуальной клавиатуры
-    keyboardContainer!: GameObjects.Container;
     
     infoText!: GameObjects.Text;
     backButton!: GameObjects.Text;
@@ -34,7 +33,6 @@ export class MainMenu extends Scene {
     private currentMatchCode: string = "";
     private inputCode: string = "";
     private isInLobby: boolean = false;
-    private cursorBlink?: Phaser.Time.TimerEvent;
 
     constructor() {
         super("MainMenu");
@@ -42,7 +40,86 @@ export class MainMenu extends Scene {
 
     create() {
         this.updateOrientation();
+        
+        // Проверяем URL параметры - может быть код игры в ссылке
+        this.checkURLForGameCode();
+        
         EventBus.emit("current-scene-ready", this);
+    }
+
+    private checkURLForGameCode() {
+        // Проверяем URL параметры
+        const urlParams = new URLSearchParams(window.location.search);
+        const gameCode = urlParams.get('code') || urlParams.get('game');
+        
+        if (gameCode && gameCode.trim()) {
+            console.log('Game code found in URL:', gameCode);
+            
+            // Автоматически пытаемся присоединиться
+            this.inputCode = gameCode.trim();
+            
+            // Показываем приветственное сообщение
+            this.showWelcomeMessage();
+            
+            // Небольшая задержка чтобы UI успел загрузиться
+            this.time.delayedCall(1500, () => {
+                this.autoJoinFromURL();
+            });
+        }
+    }
+    
+    private showWelcomeMessage() {
+        // Временно показываем приветственное сообщение
+        const w = Math.min(this.scale.width, this.scale.height);
+        const h = Math.max(this.scale.width, this.scale.height);
+        
+        const welcomeText = this.add.text(w / 2, h * 0.5, 
+            '🎮 Присоединяемся к игре...\n\nПриготовьтесь!', {
+            fontSize: '24px',
+            color: '#4CAF50',
+            fontFamily: 'Arial',
+            align: 'center',
+            fontStyle: 'bold',
+            stroke: '#000',
+            strokeThickness: 4
+        }).setOrigin(0.5).setDepth(10000);
+        
+        // Удаляем сообщение через 1.5 секунды
+        this.time.delayedCall(1500, () => {
+            welcomeText.destroy();
+        });
+    }
+
+    private async autoJoinFromURL() {
+        console.log('Auto-joining game from URL with code:', this.inputCode);
+        
+        // Показываем экран присоединения
+        this.hideMainMenu();
+        this.joinContainer.setVisible(true);
+        this.backButton.setVisible(true);
+        this.isInLobby = true;
+        
+        // Показываем код
+        this.joinCodeText.setText(this.inputCode);
+        this.joinCodeText.setColor("#4CAF50");
+        this.joinClearButton.setVisible(true);
+        
+        // Показываем сообщение
+        this.infoText.setText("Подключение к игре...");
+        this.infoText.setColor("#FFF");
+        
+        try {
+            await this.rtc.joinMatch(this.inputCode);
+            console.log('Successfully auto-joined from URL');
+            
+            // После успешного подключения игра запустится автоматически
+            // Но нам нужно убедиться что пользователь войдет в fullscreen
+            
+        } catch (err) {
+            console.error('Failed to auto-join from URL:', err);
+            this.infoText.setText("❌ Не удалось подключиться. Игра не найдена или уже началась.");
+            this.infoText.setColor("#f44336");
+        }
     }
 
     private updateOrientation() {
@@ -73,7 +150,6 @@ export class MainMenu extends Scene {
     }
 
     private createMenuContent(w: number, h: number) {
-        
         const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
         
         // Адаптивные размеры
@@ -82,10 +158,7 @@ export class MainMenu extends Scene {
         const smallSize = isMobile ? Math.min(20, w * 0.055) : 24;
 
         // Фон
-        this.background = this.add.image(w / 2, h / 2, "beach")
-            .setDisplaySize(w, h);
-
-        // Затемнение для читаемости
+        this.background = this.add.image(w / 2, h / 2, "beach").setDisplaySize(w, h);
         const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.4);
 
         // Заголовок
@@ -100,34 +173,16 @@ export class MainMenu extends Scene {
 
         // === ГЛАВНОЕ МЕНЮ ===
         
-        // Кнопка локальной игры
-        this.localGameButton = this.createButton(
-            w / 2, h * 0.35,
-            "🎮 Локальная игра",
-            "#4CAF50",
-            buttonSize
-        );
+        this.localGameButton = this.createButton(w / 2, h * 0.35, "🎮 Локальная игра", "#4CAF50", buttonSize);
         this.localGameButton.on("pointerdown", () => this.startLocalGame());
 
-        // Кнопка создания игры
-        this.hostButton = this.createButton(
-            w / 2, h * 0.48,
-            "🌐 Создать онлайн игру",
-            "#2196F3",
-            buttonSize
-        );
+        this.hostButton = this.createButton(w / 2, h * 0.48, "🌐 Создать онлайн игру", "#2196F3", buttonSize);
         this.hostButton.on("pointerdown", () => this.createOnlineGame());
 
-        // Кнопка присоединения
-        this.joinButton = this.createButton(
-            w / 2, h * 0.61,
-            "🔗 Присоединиться к игре",
-            "#FF9800",
-            buttonSize
-        );
+        this.joinButton = this.createButton(w / 2, h * 0.61, "🔗 Присоединиться к игре", "#FF9800", buttonSize);
         this.joinButton.on("pointerdown", () => this.showJoinScreen());
 
-        // === ЭКРАН СОЗДАНИЯ ИГРЫ (скрыт по умолчанию) ===
+        // === ЭКРАН СОЗДАНИЯ ИГРЫ ===
         
         this.matchCodeContainer = this.add.container(w / 2, h / 2);
         
@@ -151,60 +206,81 @@ export class MainMenu extends Scene {
         this.copyButton = this.createButton(0, h * 0.03, "📋 Копировать код", "#2196F3", smallSize);
         this.copyButton.on("pointerdown", () => this.copyMatchCode());
         
-        this.waitingText = this.add.text(0, h * 0.12, "Ожидание соперника...", {
+        // Кнопка "Поделиться ссылкой"
+        const shareLinkButton = this.createButton(0, h * 0.09, "🔗 Поделиться ссылкой", "#9C27B0", smallSize);
+        shareLinkButton.on("pointerdown", () => this.shareGameLink());
+        
+        this.waitingText = this.add.text(0, h * 0.16, "Ожидание соперника...", {
             fontSize: `${smallSize}px`,
             color: "#FFD700",
             fontFamily: "Arial"
         }).setOrigin(0.5);
         
-        this.matchCodeContainer.add([codeBg, this.matchCodeText, this.matchCodeValue, this.copyButton, this.waitingText]);
+        this.matchCodeContainer.add([codeBg, this.matchCodeText, this.matchCodeValue, this.copyButton, shareLinkButton, this.waitingText]);
         this.matchCodeContainer.setVisible(false);
 
-        // === ЭКРАН ПРИСОЕДИНЕНИЯ (скрыт по умолчанию) ===
+        // === ЭКРАН ПРИСОЕДИНЕНИЯ ===
         
         this.joinContainer = this.add.container(w / 2, h * 0.35);
         
         const joinBg = this.add.rectangle(0, 0, w * 0.85, h * 0.65, 0x1a1a1a, 0.95);
         joinBg.setStrokeStyle(3, 0xFF9800);
         
-        const joinTitle = this.add.text(0, -h * 0.25, "Введите код игры:", {
+        const joinTitle = this.add.text(0, -h * 0.25, "Код игры:", {
             fontSize: `${smallSize}px`,
             color: "#fff",
             fontFamily: "Arial"
         }).setOrigin(0.5);
         
-        this.joinInputBg = this.add.rectangle(0, -h * 0.18, w * 0.7, buttonSize * 2.2, 0x333333, 1);
+        // Поле отображения кода (только для показа, не интерактивное)
+        this.joinInputBg = this.add.rectangle(0, -h * 0.15, w * 0.7, buttonSize * 2.2, 0x333333, 1);
         this.joinInputBg.setStrokeStyle(2, 0xFF9800);
-        this.joinInputBg.setInteractive();
         
-        this.joinCodeText = this.add.text(0, -h * 0.18, "", {
-            fontSize: `${buttonSize}px`,
-            color: "#fff",
+        this.joinCodeText = this.add.text(0, -h * 0.15, "Код не введен", {
+            fontSize: `${Math.round(smallSize * 0.9)}px`,
+            color: "#999",
             fontFamily: "Courier New",
-            fontStyle: "bold"
+            align: "center"
         }).setOrigin(0.5);
         
-        // Виртуальная клавиатура для ввода кода
-        this.keyboardContainer = this.createVirtualKeyboard(0, 0, w * 0.75, smallSize);
+        // Кнопка "Ввести код"
+        const enterCodeButton = this.createButton(0, -h * 0.04, "✏️ Ввести код", "#2196F3", smallSize);
+        enterCodeButton.on("pointerdown", () => this.promptForCode());
         
-        this.confirmJoinButton = this.createButton(0, h * 0.22, "✅ Подключиться", "#4CAF50", smallSize);
+        // Кнопка "Вставить ссылку"
+        const pasteLinkButton = this.createButton(0, h * 0.02, "🔗 Вставить ссылку", "#9C27B0", Math.round(smallSize * 0.9));
+        pasteLinkButton.on("pointerdown", () => this.promptForLink());
+        
+        // Кнопка "Очистить" 
+        this.joinClearButton = this.createButton(0, h * 0.08, "🗑️ Очистить", "#666", Math.round(smallSize * 0.85));
+        this.joinClearButton.setVisible(false);
+        this.joinClearButton.on("pointerdown", () => {
+            this.inputCode = "";
+            this.joinCodeText.setText("Код не введен");
+            this.joinCodeText.setColor("#999");
+            this.joinClearButton.setVisible(false);
+        });
+        
+        this.confirmJoinButton = this.createButton(0, h * 0.18, "✅ Подключиться", "#4CAF50", smallSize);
         this.confirmJoinButton.on("pointerdown", () => this.joinGame());
         
-        this.cancelJoinButton = this.createButton(0, h * 0.285, "❌ Отмена", "#f44336", smallSize);
+        this.cancelJoinButton = this.createButton(0, h * 0.26, "❌ Отмена", "#f44336", smallSize);
         this.cancelJoinButton.on("pointerdown", () => this.showMainMenu());
         
         this.joinContainer.add([
             joinBg, 
             joinTitle, 
             this.joinInputBg, 
-            this.joinCodeText, 
-            this.keyboardContainer,
+            this.joinCodeText,
+            enterCodeButton,
+            pasteLinkButton,
+            this.joinClearButton,
             this.confirmJoinButton, 
             this.cancelJoinButton
         ]);
         this.joinContainer.setVisible(false);
 
-        // Кнопка возврата (скрыта по умолчанию)
+        // Кнопка возврата
         this.backButton = this.createButton(w * 0.15, h * 0.92, "← Назад", "#666", smallSize);
         this.backButton.on("pointerdown", () => this.cancelLobby());
         this.backButton.setVisible(false);
@@ -219,16 +295,22 @@ export class MainMenu extends Scene {
 
         // Инициализация WebRTC
         const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const wsUrl = isDev 
-            ? 'ws://localhost:8080'
-            : 'wss://game.kvadrat.tech/ws';
+        const wsUrl = isDev ? 'ws://localhost:8080' : 'wss://game.kvadrat.tech/ws';
 
         console.log('Connecting to WebSocket server:', wsUrl);
 
         this.rtc = new WebRTCService(wsUrl, (dc) => {
             dc.onopen = () => {
                 console.log('Data channel opened!');
-                this.startMultiplayerGame();
+                
+                // Небольшая задержка для визуальной обратной связи
+                this.infoText.setText("✅ Подключено! Запуск игры...");
+                this.infoText.setColor("#4CAF50");
+                
+                // Даем пользователю увидеть сообщение
+                this.time.delayedCall(800, () => {
+                    this.startMultiplayerGame();
+                });
             };
             dc.onerror = (err) => {
                 this.showError("Ошибка соединения");
@@ -237,116 +319,6 @@ export class MainMenu extends Scene {
             dc.onclose = () => {
                 console.log('Data channel closed');
             };
-        });
-
-        EventBus.emit("current-scene-ready", this);
-    }
-
-    // === ВИРТУАЛЬНАЯ КЛАВИАТУРА ===
-    
-    private createVirtualKeyboard(x: number, y: number, maxWidth: number, fontSize: number): GameObjects.Container {
-        const container = this.add.container(x, y);
-        
-        // Символы для ввода (буквы и цифры)
-        const keys = [
-            ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
-            ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
-            ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
-            ['Z', 'X', 'C', 'V', 'B', 'N', 'M', '⌫']
-        ];
-        
-        const keyWidth = maxWidth / 11;
-        const keyHeight = keyWidth * 0.9;
-        const spacing = 4;
-        const startY = -keyHeight * 1.5;
-        
-        keys.forEach((row, rowIndex) => {
-            const rowWidth = row.length * (keyWidth + spacing);
-            const startX = -rowWidth / 2 + keyWidth / 2;
-            
-            row.forEach((key, colIndex) => {
-                const keyX = startX + colIndex * (keyWidth + spacing);
-                const keyY = startY + rowIndex * (keyHeight + spacing);
-                
-                const isBackspace = key === '⌫';
-                const keyBg = this.add.rectangle(
-                    keyX, keyY, 
-                    isBackspace ? keyWidth * 1.5 : keyWidth, 
-                    keyHeight, 
-                    isBackspace ? 0xff6666 : 0x4a4a4a
-                );
-                keyBg.setInteractive();
-                keyBg.setStrokeStyle(1, 0x666666);
-                
-                const keyText = this.add.text(keyX, keyY, key, {
-                    fontSize: `${fontSize * 0.9}px`,
-                    color: "#fff",
-                    fontFamily: "Arial",
-                    fontStyle: "bold"
-                }).setOrigin(0.5);
-                
-                keyBg.on("pointerdown", () => {
-                    if (isBackspace) {
-                        this.handleBackspace();
-                    } else {
-                        this.handleKeyPress(key);
-                    }
-                    keyBg.setFillStyle(0x6a6a6a);
-                });
-                
-                keyBg.on("pointerup", () => {
-                    keyBg.setFillStyle(isBackspace ? 0xff6666 : 0x4a4a4a);
-                });
-                
-                keyBg.on("pointerout", () => {
-                    keyBg.setFillStyle(isBackspace ? 0xff6666 : 0x4a4a4a);
-                });
-                
-                container.add([keyBg, keyText]);
-            });
-        });
-        
-        return container;
-    }
-    
-    private handleKeyPress(key: string) {
-        if (this.inputCode.length < 20) {
-            this.inputCode += key;
-            this.updateJoinCodeDisplay();
-        }
-    }
-    
-    private handleBackspace() {
-        if (this.inputCode.length > 0) {
-            this.inputCode = this.inputCode.slice(0, -1);
-            this.updateJoinCodeDisplay();
-        }
-    }
-    
-    private updateJoinCodeDisplay() {
-        if (this.inputCode.length > 0) {
-            this.joinCodeText.setText(this.inputCode + '|');
-            this.joinCodeText.setColor("#fff");
-        } else {
-            this.joinCodeText.setText('|');
-            this.joinCodeText.setColor("#999");
-        }
-        
-        // Мигающий курсор
-        if (this.cursorBlink) {
-            this.cursorBlink.destroy();
-        }
-        this.cursorBlink = this.time.addEvent({
-            delay: 500,
-            callback: () => {
-                const currentText = this.joinCodeText.text;
-                if (currentText.endsWith('|')) {
-                    this.joinCodeText.setText(currentText.slice(0, -1));
-                } else {
-                    this.joinCodeText.setText(currentText + '|');
-                }
-            },
-            loop: true
         });
     }
 
@@ -374,11 +346,6 @@ export class MainMenu extends Scene {
     }
 
     private showMainMenu() {
-        if (this.cursorBlink) {
-            this.cursorBlink.destroy();
-            this.cursorBlink = undefined;
-        }
-        
         this.localGameButton.setVisible(true);
         this.hostButton.setVisible(true);
         this.joinButton.setVisible(true);
@@ -399,6 +366,13 @@ export class MainMenu extends Scene {
     // === ЛОКАЛЬНАЯ ИГРА ===
 
     private startLocalGame() {
+        console.log('Starting local game, requesting fullscreen...');
+        
+        // Запрашиваем fullscreen для мобильных
+        if (this.isMobile()) {
+            this.requestFullscreenBeforeGame();
+        }
+        
         this.scene.start("Game", {
             isMultiplayer: false,
             isHost: false,
@@ -412,15 +386,18 @@ export class MainMenu extends Scene {
         try {
             this.hideMainMenu();
             this.infoText.setText("Создание игры...");
+            this.infoText.setColor("#FFF");
             
             const matchId = await this.rtc.createMatch();
-            this.currentMatchCode = matchId;
+            this.currentMatchCode = matchId; // Сохраняем как есть
             
-            this.matchCodeValue.setText(matchId);
+            this.matchCodeValue.setText(this.currentMatchCode);
             this.matchCodeContainer.setVisible(true);
             this.backButton.setVisible(true);
             this.isInLobby = true;
             this.infoText.setText("");
+            
+            console.log('Game created with code:', this.currentMatchCode);
             
         } catch (err) {
             this.showError("Не удалось создать игру");
@@ -433,26 +410,93 @@ export class MainMenu extends Scene {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(this.currentMatchCode)
                     .then(() => {
-                        this.infoText.setText("✅ Код скопирован!");
-                        this.time.delayedCall(2000, () => {
-                            if (this.isInLobby) this.infoText.setText("");
+                        this.infoText.setText("✅ Код скопирован в буфер обмена!");
+                        this.infoText.setColor("#4CAF50");
+                        this.time.delayedCall(3000, () => {
+                            if (this.isInLobby) {
+                                this.infoText.setText("");
+                            }
                         });
                     })
                     .catch(() => {
-                        this.showCodeFallback();
+                        this.showCodeFallback(this.currentMatchCode);
                     });
             } else {
-                this.showCodeFallback();
+                this.showCodeFallback(this.currentMatchCode);
             }
         }
     }
 
-    private showCodeFallback() {
-        // Для мобильных показываем alert вместо prompt
-        if (window.Telegram?.WebApp) {
-            window.Telegram.WebApp.showAlert(`Код игры: ${this.currentMatchCode}\n\nСкопируйте его вручную.`);
+    private shareGameLink() {
+        if (!this.currentMatchCode) return;
+        
+        // Создаем ссылку с кодом игры
+        const gameUrl = `${window.location.origin}${window.location.pathname}?code=${this.currentMatchCode}`;
+        
+        console.log('Sharing game link:', gameUrl);
+        
+        // Проверяем поддержку Web Share API (для мобильных)
+        if (navigator.share) {
+            navigator.share({
+                title: 'Волейбол - Присоединяйся к игре!',
+                text: `Присоединяйся к игре в волейбол! Код: ${this.currentMatchCode}`,
+                url: gameUrl
+            })
+            .then(() => {
+                console.log('Successfully shared');
+                this.infoText.setText("✅ Ссылка отправлена!");
+                this.infoText.setColor("#4CAF50");
+                this.time.delayedCall(3000, () => {
+                    if (this.isInLobby) this.infoText.setText("");
+                });
+            })
+            .catch((err) => {
+                console.log('Share cancelled or failed:', err);
+                // Если отменили - просто копируем ссылку
+                this.copyGameLink(gameUrl);
+            });
         } else {
-            alert(`Код игры: ${this.currentMatchCode}\n\nСкопируйте его вручную.`);
+            // Для desktop - копируем ссылку в буфер
+            this.copyGameLink(gameUrl);
+        }
+    }
+    
+    private copyGameLink(gameUrl: string) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(gameUrl)
+                .then(() => {
+                    this.infoText.setText("✅ Ссылка скопирована! Отправьте другу.");
+                    this.infoText.setColor("#4CAF50");
+                    this.time.delayedCall(4000, () => {
+                        if (this.isInLobby) this.infoText.setText("");
+                    });
+                })
+                .catch(() => {
+                    this.showLinkFallback(gameUrl);
+                });
+        } else {
+            this.showLinkFallback(gameUrl);
+        }
+    }
+    
+    private showLinkFallback(gameUrl: string) {
+        if (window.Telegram?.WebApp) {
+            shareUrl(gameUrl);
+
+            // window.Telegram.WebApp.showAlert(`Ссылка на игру:\n\n${gameUrl}\n\nСкопируйте и отправьте другу!`);
+        } else {
+            prompt("Скопируйте ссылку на игру:", gameUrl);
+        }
+    }
+    
+    private showCodeFallback(code: string) {
+        if (window.Telegram?.WebApp) {
+            window.Telegram.WebApp.showAlert(`Код игры:\n\n${code}\n\nСкопируйте его и отправьте другу!`);
+        } else {
+            const message = `Код игры: ${code}\n\nСкопируйте его и отправьте другу!`;
+            this.infoText.setText(`📋 Код: ${code}`);
+            this.infoText.setColor("#FFD700");
+            alert(message);
         }
     }
 
@@ -464,57 +508,230 @@ export class MainMenu extends Scene {
         this.backButton.setVisible(true);
         this.isInLobby = true;
         this.inputCode = "";
-        this.joinCodeText.setText("|");
+        this.joinCodeText.setText("Код не введен");
         this.joinCodeText.setColor("#999");
-        this.updateJoinCodeDisplay();
+        
+        if (this.joinClearButton) {
+            this.joinClearButton.setVisible(false);
+        }
+        
+        console.log('Join screen shown');
+    }
+
+    private promptForCode() {
+        let promptText = "Вставьте код игры:";
+        
+        if (this.isMobile()) {
+            promptText += "\n\n(Удерживайте поле и выберите 'Вставить')";
+        }
+        
+        const code = prompt(promptText);
+        
+        if (code && code.trim()) {
+            this.inputCode = code.trim();
+            this.joinCodeText.setText(this.inputCode);
+            this.joinCodeText.setColor("#4CAF50");
+            this.joinClearButton.setVisible(true);
+            
+            console.log('Code entered:', this.inputCode);
+        } else if (code !== null) {
+            this.showError("Введите код игры", false);
+        }
+    }
+    
+    private promptForLink() {
+        let promptText = "Вставьте ссылку на игру:";
+        
+        if (this.isMobile()) {
+            promptText += "\n\n(Удерживайте поле и выберите 'Вставить')";
+        }
+        
+        const link = prompt(promptText);
+        
+        if (link && link.trim()) {
+            // Извлекаем код из ссылки
+            const code = this.extractCodeFromURL(link.trim());
+            
+            if (code) {
+                this.inputCode = code;
+                this.joinCodeText.setText(this.inputCode);
+                this.joinCodeText.setColor("#4CAF50");
+                this.joinClearButton.setVisible(true);
+                
+                console.log('Code extracted from link:', this.inputCode);
+                
+                this.infoText.setText("✅ Код извлечен из ссылки!");
+                this.infoText.setColor("#4CAF50");
+                this.time.delayedCall(2000, () => {
+                    if (this.isInLobby) this.infoText.setText("");
+                });
+            } else {
+                this.showError("Не удалось извлечь код из ссылки", false);
+            }
+        }
+    }
+    
+    private extractCodeFromURL(url: string): string | null {
+        try {
+            // Пытаемся распарсить как URL
+            const urlObj = new URL(url);
+            const code = urlObj.searchParams.get('code') || urlObj.searchParams.get('game');
+            
+            if (code) {
+                return code.trim();
+            }
+        } catch (e) {
+            // Если не URL, может быть просто код
+            console.log('Not a valid URL, might be just a code');
+        }
+        
+        // Пытаемся найти паттерн ?code= или &code= в строке
+        const codeMatch = url.match(/[?&]code=([^&\s]+)/i);
+        if (codeMatch && codeMatch[1]) {
+            return codeMatch[1].trim();
+        }
+        
+        const gameMatch = url.match(/[?&]game=([^&\s]+)/i);
+        if (gameMatch && gameMatch[1]) {
+            return gameMatch[1].trim();
+        }
+        
+        return null;
+    }
+    
+    private isMobile(): boolean {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
 
     private async joinGame() {
         if (!this.inputCode || this.inputCode.trim().length === 0) {
-            this.showError("Введите код игры");
+            this.showError("Введите код игры", false); // Не возвращаемся в меню
             return;
         }
 
         try {
+            console.log('Attempting to join match:', this.inputCode.trim());
             this.infoText.setText("Подключение...");
+            this.infoText.setColor("#FFF");
+            
             await this.rtc.joinMatch(this.inputCode.trim());
+            
+            console.log('Successfully joined match');
         } catch (err) {
-            this.showError("Не удалось подключиться");
-            console.error(err);
+            console.error('Failed to join match:', err);
+            
+            // Показываем ошибку но НЕ возвращаемся в главное меню
+            this.infoText.setText("❌ Не удалось подключиться. Проверьте код.");
+            this.infoText.setColor("#f44336");
+            
+            // Очищаем сообщение через 5 секунд, но остаемся на экране
+            this.time.delayedCall(5000, () => {
+                if (this.isInLobby) {
+                    this.infoText.setText("");
+                }
+            });
         }
     }
 
     // === ЗАПУСК МУЛЬТИПЛЕЕРА ===
 
     private startMultiplayerGame() {
-        if (this.cursorBlink) {
-            this.cursorBlink.destroy();
-            this.cursorBlink = undefined;
-        }
+        console.log('Starting multiplayer game, requesting fullscreen...');
         
+        // Запрашиваем fullscreen перед запуском игры
+        this.requestFullscreenBeforeGame();
+        
+        // Запускаем игру
         this.scene.start("Game", {
             isMultiplayer: true,
             isHost: this.rtc.getIsHost(),
             dataChannel: this.rtc.getDataChannel()
         });
     }
+    
+    private async requestFullscreenBeforeGame() {
+        // Проверяем мобильное устройство
+        const isMobile = this.isMobile();
+        
+        if (!isMobile) {
+            console.log('Desktop detected, skipping fullscreen request');
+            return;
+        }
+        
+        console.log('Mobile detected, requesting fullscreen');
+        
+        try {
+            // Импортируем функции из telegram.ts
+            const { requestFullscreen, isTelegramMobilePlatform } = await import('../../telegram');
+            
+            const isTgMobile = isTelegramMobilePlatform();
+            
+            if (isTgMobile) {
+                console.log('Telegram mobile platform, using Telegram API');
+                await requestFullscreen();
+            } else {
+                console.log('Regular mobile browser, using HTML5 Fullscreen API');
+                await this.requestHTML5Fullscreen();
+            }
+            
+            console.log('Fullscreen request successful');
+        } catch (err) {
+            console.error('Failed to enter fullscreen:', err);
+            // Не критично, продолжаем игру
+        }
+    }
+    
+    private async requestHTML5Fullscreen(): Promise<void> {
+        try {
+            const elem = document.documentElement;
+            
+            if (elem.requestFullscreen) {
+                await elem.requestFullscreen();
+            } else if ((elem as any).webkitRequestFullscreen) {
+                await (elem as any).webkitRequestFullscreen();
+            } else if ((elem as any).mozRequestFullScreen) {
+                await (elem as any).mozRequestFullScreen();
+            } else if ((elem as any).msRequestFullscreen) {
+                await (elem as any).msRequestFullscreen();
+            }
+            
+            // Блокируем ориентацию в landscape если возможно
+            if (screen.orientation && (screen.orientation as any).lock) {
+                try {
+                    await (screen.orientation as any).lock('landscape');
+                } catch (e) {
+                    console.warn('Could not lock orientation:', e);
+                }
+            }
+        } catch (err) {
+            console.error('HTML5 fullscreen request failed:', err);
+            throw err;
+        }
+    }
 
     // === ОТМЕНА И ВЫХОД ===
 
     private cancelLobby() {
-        if (this.cursorBlink) {
-            this.cursorBlink.destroy();
-            this.cursorBlink = undefined;
-        }
         this.rtc.disconnect();
         this.showMainMenu();
     }
 
-    private showError(message: string) {
+    private showError(message: string, returnToMenu: boolean = true) {
         this.infoText.setText("❌ " + message);
-        this.time.delayedCall(3000, () => {
-            this.showMainMenu();
-        });
+        this.infoText.setColor("#f44336");
+        
+        if (returnToMenu) {
+            this.time.delayedCall(3000, () => {
+                this.showMainMenu();
+            });
+        } else {
+            // Просто очищаем сообщение через 3 секунды
+            this.time.delayedCall(3000, () => {
+                if (this.isInLobby) {
+                    this.infoText.setText("");
+                }
+            });
+        }
     }
 
     // === API для внешнего вызова ===
@@ -523,10 +740,12 @@ export class MainMenu extends Scene {
         this.startLocalGame();
     }
     
-    shutdown() {
-        if (this.cursorBlink) {
-            this.cursorBlink.destroy();
-            this.cursorBlink = undefined;
-        }
+    // Обработка изменения размера окна
+    resize(gameSize: Phaser.Structs.Size) {
+        const width = gameSize.width;
+        const height = gameSize.height;
+        
+        console.log('MainMenu resize event:', { width, height });
+        this.updateOrientation();
     }
 }

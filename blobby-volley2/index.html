@@ -59,15 +59,37 @@
             width: 100vw !important;
             height: 100vh !important;
             position: relative;
+            overflow: hidden;
         }
 
         canvas {
             display: block;
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: contain;
-            will-change: transform;
-            transform: translateZ(0);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Для портретного режима когда игра в landscape */
+        @media screen and (orientation: portrait) {
+            canvas.game-landscape {
+                width: 100vh !important;
+                height: 100vw !important;
+                transform: translate(-50%, -50%) rotate(90deg);
+                transform-origin: center center;
+            }
+        }
+
+        /* Для landscape режима когда меню в portrait */
+        @media screen and (orientation: landscape) {
+            canvas.menu-portrait {
+                width: 100vh !important;
+                height: 100vw !important;
+                transform: translate(-50%, -50%) rotate(90deg);
+                transform-origin: center center;
+            }
         }
 
         :fullscreen, :-webkit-full-screen, :-moz-full-screen {

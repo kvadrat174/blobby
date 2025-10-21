@@ -253,3 +253,141 @@ export function unlockOrientation() {
         console.warn('Не удалось разблокировать ориентацию:', error);
     }
 }
+
+/**
+ * Поделиться ссылкой через Telegram
+ * @param url - URL для шэринга
+ * @param text - Текст сообщения (опционально)
+ */
+export function shareUrl(url: string, text?: string): boolean {
+    if (!tg) {
+        console.warn('Telegram WebApp недоступен');
+        // Fallback на стандартный Web Share API
+        return fallbackShare(url, text);
+    }
+
+    try {
+        // Формируем сообщение
+        const message = text ? `${text}\n${url}` : url;
+        
+        // Используем Telegram Share API
+        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}${text ? `&text=${encodeURIComponent(text)}` : ''}`;
+        
+        tg.openTelegramLink(shareUrl);
+        
+        if (tg.HapticFeedback) {
+            tg.HapticFeedback.notificationOccurred('success');
+        }
+        
+        console.log('Ссылка отправлена на шэринг:', { url, text });
+        return true;
+    } catch (error) {
+        console.error('Ошибка шэринга через Telegram:', error);
+        return fallbackShare(url, text);
+    }
+}
+
+/**
+ * Пригласить друга (специальный метод для реферальных ссылок)
+ * @param botUsername - имя бота (без @)
+ * @param startParam - параметр для start (например, реферальный код)
+ * @param text - текст приглашения
+ */
+export function inviteFriend(botUsername: string, startParam: string, text?: string): boolean {
+    if (!tg) {
+        console.warn('Telegram WebApp недоступен');
+        return false;
+    }
+
+    try {
+        const inviteUrl = `https://t.me/${botUsername}?start=${startParam}`;
+        const message = text || `Присоединяйся к игре!`;
+        
+        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteUrl)}&text=${encodeURIComponent(message)}`;
+        
+        tg.openTelegramLink(shareUrl);
+        
+        if (tg.HapticFeedback) {
+            tg.HapticFeedback.impactOccurred('medium');
+        }
+        
+        console.log('Приглашение отправлено:', { botUsername, startParam, text });
+        return true;
+    } catch (error) {
+        console.error('Ошибка отправки приглашения:', error);
+        return false;
+    }
+}
+
+/**
+ * Поделиться результатом игры
+ * @param score - счет игрока
+ * @param botUsername - имя бота
+ * @param startParam - реферальный параметр (опционально)
+ */
+export function shareGameResult(score: number, botUsername: string, startParam?: string): boolean {
+    const text = `🎮 Я набрал ${score} очков! Сможешь побить мой рекорд?`;
+    const url = startParam 
+        ? `https://t.me/${botUsername}?start=${startParam}`
+        : `https://t.me/${botUsername}`;
+    
+    return shareUrl(url, text);
+}
+
+/**
+ * Fallback на стандартный Web Share API
+ */
+function fallbackShare(url: string, text?: string): boolean {
+    if (navigator.share) {
+        try {
+            navigator.share({
+                title: text || 'Поделиться',
+                text: text,
+                url: url
+            });
+            return true;
+        } catch (error) {
+            console.error('Ошибка Web Share API:', error);
+        }
+    }
+    
+    // Последний fallback - копирование в буфер обмена
+    try {
+        navigator.clipboard.writeText(url);
+        console.log('Ссылка скопирована в буфер обмена');
+        if (tg?.HapticFeedback) {
+            tg.HapticFeedback.notificationOccurred('success');
+        }
+        return true;
+    } catch (error) {
+        console.error('Ошибка копирования в буфер обмена:', error);
+        return false;
+    }
+}
+
+/**
+ * Открыть внешнюю ссылку
+ * @param url - URL для открытия
+ * @param tryInstantView - попытаться открыть в Instant View (только для некоторых сайтов)
+ */
+export function openExternalLink(url: string, tryInstantView: boolean = false): void {
+    if (!tg) {
+        window.open(url, '_blank');
+        return;
+    }
+
+    try {
+        if (tryInstantView) {
+            tg.openTelegramLink(url);
+        } else {
+            tg.openLink(url);
+        }
+        
+        if (tg.HapticFeedback) {
+            tg.HapticFeedback.selectionChanged();
+        }
+    } catch (error) {
+        console.error('Ошибка открытия ссылки:', error);
+        window.open(url, '_blank');
+    }
+}

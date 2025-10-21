@@ -52,12 +52,42 @@ export const PhaserGame = forwardRef<IRefPhaserGame, IProps>(function PhaserGame
             } else if (ref) {
                 ref.current = { game: game.current, scene: scene_instance };
             }
+
+            // Обновляем класс canvas в зависимости от сцены
+            updateCanvasClass(scene_instance.scene.key);
         });
         
         return () => {
             EventBus.removeListener('current-scene-ready');
         };
     }, [currentActiveScene, ref]);
+
+    // Функция для обновления класса canvas
+    const updateCanvasClass = (sceneKey: string) => {
+        if (!game.current) return;
+        
+        const canvas = game.current.canvas;
+        if (!canvas) return;
+
+        const isPortraitDevice = window.innerHeight > window.innerWidth;
+        
+        // Удаляем все классы
+        canvas.classList.remove('game-landscape', 'menu-portrait');
+        
+        if (sceneKey === 'Game' && isPortraitDevice) {
+            // Игра в landscape на портретном устройстве - нужна ротация
+            canvas.classList.add('game-landscape');
+        } else if (sceneKey !== 'Game' && !isPortraitDevice) {
+            // Меню в portrait на ландшафтном устройстве - нужна ротация
+            canvas.classList.add('menu-portrait');
+        }
+        
+        console.log('Canvas class updated:', {
+            sceneKey,
+            isPortraitDevice,
+            classes: canvas.className
+        });
+    };
 
     // Слушаем изменения размера окна и обновляем размер игры
     // НО сохраняем ориентацию текущей сцены
@@ -87,12 +117,20 @@ export const PhaserGame = forwardRef<IRefPhaserGame, IProps>(function PhaserGame
                 
                 console.log('Applying size:', { finalWidth, finalHeight, scene: sceneName });
                 
+                // Обновляем размеры игры
                 game.current.scale.resize(finalWidth, finalHeight);
                 
-                // Обновляем размеры камеры текущей сцены
+                // Обновляем класс canvas
+                updateCanvasClass(sceneName || '');
+                
+                // Обновляем камеру текущей сцены
                 if (currentScene && currentScene.cameras && currentScene.cameras.main) {
                     currentScene.cameras.main.setSize(finalWidth, finalHeight);
-                    currentScene.scale.resize(finalWidth, finalHeight);
+                    
+                    // Вызываем resize на сцене если метод существует
+                    if (typeof (currentScene as any).resize === 'function') {
+                        (currentScene as any).resize({ width: finalWidth, height: finalHeight });
+                    }
                 }
             }
         };
