@@ -394,23 +394,32 @@ export class Game extends Scene {
 
     private createMultiplayerControls() {
         // Для онлайн мультиплеера - весь экран для одного игрока
+        // КРИТИЧНО: Хост управляет Player1 (слева), гость управляет Player2 (справа)
         const isPlayer1 = this.isHost;
         
-        console.log('Creating multiplayer controls for:', isPlayer1 ? 'Player 1' : 'Player 2');
+        console.log('=== Creating Multiplayer Controls ===');
+        console.log('isHost:', this.isHost, '-> controlling:', isPlayer1 ? 'Player 1 (LEFT)' : 'Player 2 (RIGHT)');
         
-        // ВСЯ область экрана = зона прыжка
+        // Кнопки движения - БОЛЬШИЕ и по центру экрана внизу
+        const btnSize = Math.min(120 * (this.FIELD_HEIGHT / 640), 140);
+        const btnY = this.FIELD_HEIGHT - btnSize / 2 - 30;
+        const spacing = btnSize * 0.3;
+        const centerX = this.FIELD_WIDTH / 2;
+        
+        // Зона прыжка - ВСЁ КРОМЕ КНОПОК (выше кнопок)
+        const jumpZoneHeight = btnY - btnSize / 2 - 20; // Всё выше кнопок с отступом
         const jumpZone = this.add.zone(
-            this.FIELD_WIDTH / 4, 
-            this.FIELD_HEIGHT / 2, 
-            this.FIELD_WIDTH / 2, 
-            this.FIELD_HEIGHT
-        ).setInteractive().setScrollFactor(0);
+            centerX, 
+            jumpZoneHeight / 2, 
+            this.FIELD_WIDTH, 
+            jumpZoneHeight
+        ).setInteractive().setScrollFactor(0).setDepth(50);
         
         // Подсказка вверху
         const hintFontSize = Math.max(20, Math.min(28 * (this.FIELD_HEIGHT / 640), 32));
         const hintY = Math.min(60 * (this.FIELD_HEIGHT / 640), 80);
         
-        this.add.text(this.FIELD_WIDTH / 2, hintY, 'НАЖМИТЕ ЭКРАН = ПРЫЖОК', {
+        this.add.text(centerX, hintY, 'НАЖМИТЕ ЭКРАН = ПРЫЖОК', {
             fontSize: `${hintFontSize}px`,
             color: isPlayer1 ? '#4444ff' : '#44ff44',
             fontFamily: 'Arial',
@@ -420,7 +429,7 @@ export class Game extends Scene {
             strokeThickness: 4
         }).setOrigin(0.5).setDepth(101);
         
-        // Обработчик прыжка на весь экран
+        // Обработчик прыжка
         jumpZone.on('pointerdown', () => {
             const player = isPlayer1 ? this.player1 : this.player2;
             if (player.body!.blocked.down) {
@@ -437,16 +446,11 @@ export class Game extends Scene {
             }
         });
         
-        // Кнопки движения - БОЛЬШИЕ и по центру экрана внизу
-        const btnSize = Math.min(120 * (this.FIELD_HEIGHT / 640), 140); // Увеличили размер
-        const btnY = this.FIELD_HEIGHT - btnSize / 2 - 30;
-        const spacing = btnSize * 0.3;
-        const centerX = this.FIELD_WIDTH / 2;
-        
         const arrowFontSize = Math.max(48, Math.min(64 * (this.FIELD_HEIGHT / 640), 72));
         
+        // ЛЕВАЯ кнопка - слева от центра
         const leftBtn = this.add.rectangle(
-            centerX - btnSize / 2 - spacing / 2, 
+            centerX / 2 - btnSize / 2 - spacing / 2, 
             btnY, 
             btnSize, 
             btnSize, 
@@ -465,8 +469,9 @@ export class Game extends Scene {
             strokeThickness: 4
         }).setOrigin(0.5).setDepth(101).setScrollFactor(0);
         
+        // ПРАВАЯ кнопка - справа от центра
         const rightBtn = this.add.rectangle(
-            centerX + btnSize / 2 + spacing / 2, 
+            centerX / 2 + btnSize / 2 + spacing / 2, 
             btnY, 
             btnSize, 
             btnSize, 
@@ -517,7 +522,11 @@ export class Game extends Scene {
         console.log('Multiplayer controls created:', {
             isPlayer1,
             buttonSize: btnSize,
-            buttonPosition: { x: centerX, y: btnY }
+            leftButtonX: leftBtn.x,
+            rightButtonX: rightBtn.x,
+            buttonsY: btnY,
+            jumpZoneHeight: jumpZoneHeight,
+            centerX: centerX
         });
     }
 

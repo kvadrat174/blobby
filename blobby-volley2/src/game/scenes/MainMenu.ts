@@ -32,6 +32,7 @@ export class MainMenu extends Scene {
     private rtc!: WebRTCService;
     private currentMatchCode: string = "";
     private inputCode: string = "";
+    private autoJoinCode: string = ""; // ✅ Отдельная переменная для авто-присоединения
     private isInLobby: boolean = false;
 
     constructor() {
@@ -41,46 +42,28 @@ export class MainMenu extends Scene {
     create() {
         this.updateOrientation();
         
+        // ВАЖНО: Сначала проверяем URL параметры
+        const urlParams = new URLSearchParams(window.location.search);
+        const gameCode = urlParams.get('code') || urlParams.get('game');
         
-        // Проверяем URL параметры - может быть код игры в ссылке
-        this.checkURLForGameCode();
+        // Если есть код в URL - это автоматическое присоединение
+        if (gameCode && gameCode.trim()) {
+            const trimmedCode = gameCode.trim();
+            console.log('Game code found in URL, will auto-join:', trimmedCode);
+            this.autoJoinCode = trimmedCode; // ✅ Сохраняем отдельно для авто-присоединения
+            this.inputCode = trimmedCode;    // Сохраняем и в обычное поле
+        }
         
         EventBus.emit("current-scene-ready", this);
     }
 
-    private checkURLForGameCode() {
-        // Проверяем URL параметры
-        const urlParams = new URLSearchParams(window.location.search);
-        const gameCode = urlParams.get('code') || urlParams.get('game');
-
-        // Проверяем, не создали ли мы уже эту игру
-        if (this.currentMatchCode === gameCode) {
-            console.log('This is our own game, ignoring URL');
-            return;
-        }
-        if (gameCode && gameCode.trim()) {
-            console.log('Game code found in URL:', gameCode);
-            
-            // Автоматически пытаемся присоединиться
-            this.inputCode = gameCode.trim();
-            
-            // Показываем приветственное сообщение
-            this.showWelcomeMessage();
-            
-            // Небольшая задержка чтобы UI успел загрузиться
-            this.time.delayedCall(1500, () => {
-                this.autoJoinFromURL();
-            });
-        }
-    }
-    
     private showWelcomeMessage() {
         // Временно показываем приветственное сообщение
         const w = Math.min(this.scale.width, this.scale.height);
         const h = Math.max(this.scale.width, this.scale.height);
         
         const welcomeText = this.add.text(w / 2, h * 0.5, 
-            '🎮 Присоединяемся к игре...\n\nПриготовьтесь!', {
+            '🎮 Присоединяемся к игре...\n\nПодождите немного...', {
             fontSize: '24px',
             color: '#4CAF50',
             fontFamily: 'Arial',
@@ -90,14 +73,20 @@ export class MainMenu extends Scene {
             strokeThickness: 4
         }).setOrigin(0.5).setDepth(10000);
         
-        // Удаляем сообщение через 1.5 секунды
-        this.time.delayedCall(1500, () => {
+        // Удаляем сообщение через 2.5 секунды
+        this.time.delayedCall(2500, () => {
             welcomeText.destroy();
         });
     }
 
     private async autoJoinFromURL() {
-        console.log('Auto-joining game from URL with code:', this.inputCode);
+        const codeToJoin = this.autoJoinCode; // ✅ Используем сохраненный код
+        
+        console.log('=== AUTO JOIN FROM URL ===');
+        console.log('Code to join:', codeToJoin);
+        console.log('Code length:', codeToJoin?.length);
+        console.log('Code type:', typeof codeToJoin);
+        console.log('=== ===');
         
         // Показываем экран присоединения
         this.hideMainMenu();
@@ -106,7 +95,7 @@ export class MainMenu extends Scene {
         this.isInLobby = true;
         
         // Показываем код
-        this.joinCodeText.setText(this.inputCode);
+        this.joinCodeText.setText(codeToJoin);
         this.joinCodeText.setColor("#4CAF50");
         this.joinClearButton.setVisible(true);
         
@@ -115,11 +104,20 @@ export class MainMenu extends Scene {
         this.infoText.setColor("#FFF");
         
         try {
-            await this.rtc.joinMatch(this.inputCode);
-            console.log('Successfully auto-joined from URL');
+            console.log('Calling rtc.joinMatch with code:', codeToJoin);
+            // ВАЖНО: joinMatch делает нас гостем (не хостом)
+            await this.rtc.joinMatch(codeToJoin);
+            
+            // ✅ ПРОВЕРКА: убеждаемся что мы гость
+            if (this.rtc.getIsHost()) {
+                console.error('⚠️ ERROR: Auto-joined from URL but marked as HOST!');
+                throw new Error('Invalid role assignment');
+            }
+            
+            console.log('✅ Successfully auto-joined from URL as GUEST');
             
             // После успешного подключения игра запустится автоматически
-            // Но нам нужно убедиться что пользователь войдет в fullscreen
+            // через callback dataChannel.onopen
             
         } catch (err) {
             console.error('Failed to auto-join from URL:', err);
@@ -306,8 +304,14 @@ export class MainMenu extends Scene {
         console.log('Connecting to WebSocket server:', wsUrl);
 
         this.rtc = new WebRTCService(wsUrl, (dc) => {
+            console.log('=== DataChannel callback in MainMenu ===');
+            console.log('DataChannel received, isHost:', this.rtc.getIsHost());
+            console.log('Match code:', this.currentMatchCode || this.inputCode);
+            
             dc.onopen = () => {
-                console.log('Data channel opened!');
+                console.log('=== Data channel opened! ===');
+                console.log('My role:', this.rtc.getIsHost() ? 'HOST (Player 1)' : 'GUEST (Player 2)');
+                console.log('Match ID:', this.rtc.getMatchId());
                 
                 // Небольшая задержка для визуальной обратной связи
                 this.infoText.setText("✅ Подключено! Запуск игры...");
@@ -326,6 +330,16 @@ export class MainMenu extends Scene {
                 console.log('Data channel closed');
             };
         });
+        
+        // ПОСЛЕ инициализации WebRTC проверяем URL для автоматического присоединения
+        if (this.autoJoinCode) { // ✅ Используем отдельную переменную
+            console.log('Auto-joining from URL with code:', this.autoJoinCode);
+            this.showWelcomeMessage();
+            // Увеличили задержку до 2.5 секунд чтобы UI точно успел загрузиться
+            this.time.delayedCall(2500, () => {
+                this.autoJoinFromURL();
+            });
+        }
     }
 
     // === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
@@ -488,8 +502,6 @@ export class MainMenu extends Scene {
     private showLinkFallback(gameUrl: string) {
         if (window.Telegram?.WebApp) {
             shareUrl(gameUrl);
-
-            // window.Telegram.WebApp.showAlert(`Ссылка на игру:\n\n${gameUrl}\n\nСкопируйте и отправьте другу!`);
         } else {
             prompt("Скопируйте ссылку на игру:", gameUrl);
         }
@@ -611,7 +623,7 @@ export class MainMenu extends Scene {
 
     private async joinGame() {
         if (!this.inputCode || this.inputCode.trim().length === 0) {
-            this.showError("Введите код игры", false); // Не возвращаемся в меню
+            this.showError("Введите код игры", false);
             return;
         }
 
@@ -626,11 +638,9 @@ export class MainMenu extends Scene {
         } catch (err) {
             console.error('Failed to join match:', err);
             
-            // Показываем ошибку но НЕ возвращаемся в главное меню
             this.infoText.setText("❌ Не удалось подключиться. Проверьте код.");
             this.infoText.setColor("#f44336");
             
-            // Очищаем сообщение через 5 секунд, но остаемся на экране
             this.time.delayedCall(5000, () => {
                 if (this.isInLobby) {
                     this.infoText.setText("");
@@ -643,16 +653,31 @@ export class MainMenu extends Scene {
 
     private startMultiplayerGame() {
         console.log('Starting multiplayer game, requesting fullscreen...');
+        console.log('Game setup - isHost:', this.rtc.getIsHost(), 'dataChannel ready:', !!this.rtc.getDataChannel());
+        
+        // ⚠️ ФИНАЛЬНАЯ ПРОВЕРКА
+        const isHost = this.rtc.getIsHost();
+        const wasAutoJoined = !!this.autoJoinCode; // Если был код в URL
+        
+        if (wasAutoJoined && isHost) {
+            console.error('🚨 CRITICAL ERROR: Auto-joined player is marked as HOST!');
+            console.error('This should NEVER happen. Check WebRTCService.joinMatch()');
+        }
         
         // Запрашиваем fullscreen перед запуском игры
         this.requestFullscreenBeforeGame();
         
-        // Запускаем игру
-        this.scene.start("Game", {
+        // Запускаем игру с правильными параметрами
+        const gameConfig = {
             isMultiplayer: true,
-            isHost: this.rtc.getIsHost(),
+            isHost: isHost, // Это КРИТИЧЕСКИ важно!
             dataChannel: this.rtc.getDataChannel()
-        });
+        };
+        
+        console.log('Launching Game scene with config:', gameConfig);
+        console.log('Player role:', isHost ? '🏠 HOST (Player 1 - LEFT)' : '👤 GUEST (Player 2 - RIGHT)');
+        
+        this.scene.start("Game", gameConfig);
     }
     
     private async requestFullscreenBeforeGame() {
